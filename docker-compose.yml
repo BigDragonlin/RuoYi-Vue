@@ -122,7 +122,7 @@ services: # 定义所有要运行的服务
       - ./ruoyi-ui:/app                 # 挂载前端源码目录
       - ui_node_modules:/app/node_modules # 缓存 node_modules，避免每次重装
     ports:
-      - "8000:80" # 宿主 8000 -> 容器 80（前端访问端口）
+      - "80:80" # 宿主 8000 -> 容器 80（前端访问端口）
     depends_on:
       backend:
         condition: service_started # 后端容器已启动即可
