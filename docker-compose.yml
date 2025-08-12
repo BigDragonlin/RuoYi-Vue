@@ -1,0 +1,115 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: ruoyi-mysql
+    command: [
+      "--default-authentication-plugin=mysql_native_password",
+      "--character-set-server=utf8mb4",
+      "--collation-server=utf8mb4_unicode_ci",
+      "--max_connections=1000"
+    ]
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: ry-vue
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./sql/ry_20250522.sql:/docker-entrypoint-initdb.d/01_ry.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-ppassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:6-alpine
+    container_name: ruoyi-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    image: maven:3.8.6-openjdk-8
+    container_name: ruoyi-backend
+    working_dir: /workspace
+    # 先聚合构建依赖模块安装到本地仓库，再进入 ruoyi-admin 执行 spring-boot:run
+    command: >
+      bash -lc "mvn -DskipTests=true -pl ruoyi-admin -am install && \
+      mvn -N -f ruoyi-admin/pom.xml \
+      org.springframework.boot:spring-boot-maven-plugin:2.5.15:run \
+      -Dspring-boot.run.mainClass=com.ruoyi.RuoYiApplication \
+      -Dspring-boot.run.fork=true \
+      -Dspring-boot.run.profiles=druid \
+      -Dspring-boot.run.jvmArguments='-Dspring.devtools.restart.enabled=true -Dspring.devtools.restart.poll-interval=2s -Dspring.devtools.restart.quiet-period=1s'"
+    environment:
+      TZ: Asia/Shanghai
+      MAVEN_OPTS: -Xms512m -Xmx1024m
+      SPRING_PROFILES_ACTIVE: druid
+      # 数据源指向 mysql 容器
+      SPRING_DATASOURCE_DRUID_MASTER_URL: jdbc:mysql://mysql:3306/ry-vue?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8
+      SPRING_DATASOURCE_DRUID_MASTER_USERNAME: root
+      SPRING_DATASOURCE_DRUID_MASTER_PASSWORD: password
+      # Redis 指向 redis 容器
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: "6379"
+      # 文件上传目录（容器内）
+      RUOYI_PROFILE: /ruoyi/uploadPath
+    volumes:
+      - ./:/workspace
+      - maven_repo:/root/.m2
+      - upload_files:/ruoyi/uploadPath
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    image: node:16-alpine
+    container_name: ruoyi-frontend
+    working_dir: /app
+    environment:
+      TZ: Asia/Shanghai
+      # 前端开发服务器监听端口（注意 vue.config.js 读取的是小写 port）
+      port: "80"
+      PORT: "80"
+      HOST: 0.0.0.0
+      # 反向代理到后端容器
+      BACKEND_URL: http://backend:8080
+      VUE_APP_BASE_API: /dev-api
+      # Windows/Mac 下文件监听建议开启轮询
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+      # 国内加速（可选）
+      NPM_CONFIG_REGISTRY: https://registry.npmmirror.com
+    command: sh -c "npm install && npm run dev"
+    volumes:
+      - ./ruoyi-ui:/app
+      - ui_node_modules:/app/node_modules
+    ports:
+      - "8000:80"
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  redis_data:
+  maven_repo:
+  ui_node_modules:
+  upload_files:
+
+
