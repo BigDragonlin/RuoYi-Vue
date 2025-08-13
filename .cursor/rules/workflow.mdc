@@ -10,4 +10,6 @@ description: 团队在 Cursor 中协作的工作流与工具使用建议
   - 前端：`npm run build` 或 `npm run dev` 验证页面是否正常；
   - 日志与报错优先定位根因再修复。
 - **MCP 使用**：能用工具就不用猜测（检索/读文件/运行命令等）。
-
+ 
+ - **提交信息**：遵循 `gitmessage` 规范（见 `.cursor/rules/gitmessage.mdc`）。
+ 
