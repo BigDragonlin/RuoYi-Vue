@@ -12,7 +12,7 @@ ENV VUE_APP_BASE_API=${VUE_APP_BASE_API}
 # 安装依赖（使用国内源可选）
 COPY ruoyi-ui/package*.json ./
 RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi \
-    && npm ci
+    && npm install
 
 # 拷贝前端源码并构建
 COPY ruoyi-ui/ ./
