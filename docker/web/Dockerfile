@@ -5,7 +5,7 @@ WORKDIR /app
 
 # 可通过 --build-arg 覆盖，默认 /prod-api
 ARG VUE_APP_BASE_API=/prod-api
-ARG NPM_REGISTRY=
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 
 ENV VUE_APP_BASE_API=${VUE_APP_BASE_API}
 
