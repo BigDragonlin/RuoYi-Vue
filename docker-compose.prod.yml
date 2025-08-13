@@ -36,7 +36,7 @@ services:
       - "--max_connections=500"
     environment:
       # 数据库 root 密码（务必在生产覆盖）
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-changeit}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
       # 首次启动自动创建的数据库名
       MYSQL_DATABASE: ${MYSQL_DATABASE:-ry-vue}
       # 容器时区
@@ -46,7 +46,7 @@ services:
       - mysql_data:/var/lib/mysql
     healthcheck:
       # 使用 mysqladmin ping 检查服务可用性
-      test: ["CMD", "mysqladmin", "ping", "-p${MYSQL_ROOT_PASSWORD:-changeit}"]
+      test: ["CMD", "mysqladmin", "ping", "-p${MYSQL_ROOT_PASSWORD:-password}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -91,7 +91,7 @@ services:
       # 数据源指向 compose 内 mysql 服务
       SPRING_DATASOURCE_DRUID_MASTER_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-ry-vue}?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8
       SPRING_DATASOURCE_DRUID_MASTER_USERNAME: root
-      SPRING_DATASOURCE_DRUID_MASTER_PASSWORD: ${MYSQL_ROOT_PASSWORD:-changeit}
+      SPRING_DATASOURCE_DRUID_MASTER_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
       # Redis 指向 compose 内 redis 服务
       SPRING_REDIS_HOST: redis
       SPRING_REDIS_PORT: "6379"
@@ -104,7 +104,7 @@ services:
     command:
       - bash
       - -lc
-      - mvn -DskipTests=true -pl ruoyi-admin -am package && java -Djava.security.egd=file:/dev/./urandom -Xms512m -Xmx1024m -jar ruoyi-admin/target/ruoyi-admin.jar
+      - export PATH="$$JAVA_HOME/bin:$$PATH"; if [ ! -f ruoyi-admin/target/ruoyi-admin.jar ]; then mvn -DskipTests=true -pl ruoyi-admin -am package; fi; exec "$${JAVA_HOME}/bin/java" -Djava.security.egd=file:/dev/./urandom -Xms512m -Xmx1024m -jar ruoyi-admin/target/ruoyi-admin.jar
     volumes:
       # 挂载整个项目目录，以便读取构建产物（生产可改为仅挂载目标模块或 jar）
       - ./:/workspace
