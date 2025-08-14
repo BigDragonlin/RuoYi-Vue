@@ -1,0 +1,65 @@
+############################################################
+# RuoYi 开发环境（仅依赖：MySQL + Redis）
+#
+# 用法：
+#   1) 启动：  docker compose -f docker-compose.dev.yml up -d
+#   2) 查看：  docker compose -f docker-compose.dev.yml ps
+#   3) 日志：  docker compose -f docker-compose.dev.yml logs -f mysql
+#   4) 停止：  docker compose -f docker-compose.dev.yml down
+#   5) 清理卷：docker compose -f docker-compose.dev.yml down -v  （会删除数据，谨慎）
+#
+# 说明：
+# - 仅包含开发必要依赖：MySQL 与 Redis，便于本机后端/前端直连。
+# - 暴露 3306/6379 到宿主机，后端可直接使用 localhost 连接。
+# - 首次启动会用 sql/ry_20250522.sql 初始化数据库（仅当数据卷为空时）。
+# - 采用 Compose v2 语法（无需声明 version 字段）。
+############################################################
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: ruoyi-mysql
+    command:
+      - "--default-authentication-plugin=mysql_native_password"
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_unicode_ci"
+      - "--max_connections=500"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ry-vue}
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./sql/ry_20250522.sql:/docker-entrypoint-initdb.d/01_ry.sql:ro
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-p${MYSQL_ROOT_PASSWORD:-password}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:6-alpine
+    container_name: ruoyi-redis
+    command:
+      - "redis-server"
+      - "--appendonly"
+      - "yes"
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  redis_data:
+
+
