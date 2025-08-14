@@ -59,6 +59,40 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # ==================== DB Init（首次或缺表时导入初始化 SQL） ====================
+  db-init:
+    image: mysql:8.0
+    container_name: ruoyi-db-init
+    environment:
+      # 与 MySQL 服务保持一致
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ry-vue}
+      TZ: Asia/Shanghai
+    volumes:
+      # 挂载仓库内 SQL 脚本
+      - ./sql:/sql:ro
+    command:
+      - sh
+      - -lc
+      - |
+        # 等待 MySQL 可用
+        until mysql -hmysql -uroot -p"$$MYSQL_ROOT_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do echo "waiting for mysql..."; sleep 2; done;
+        # 确保数据库存在（数据库名含连字符需反引号包裹）
+        mysql -hmysql -uroot -p"$$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE IF NOT EXISTS \`$$MYSQL_DATABASE\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" || true;
+        # 检查是否已存在核心表（sys_config）
+        HAS_TABLE=$(mysql -hmysql -uroot -p"$$MYSQL_ROOT_PASSWORD" -N -s -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$$MYSQL_DATABASE' AND table_name='sys_config';");
+        if [ "$$HAS_TABLE" -eq 0 ]; then
+          echo "[db-init] importing initial schema/data...";
+          if [ -f /sql/ry_20250522.sql ]; then mysql -hmysql -uroot -p"$$MYSQL_ROOT_PASSWORD" "$$MYSQL_DATABASE" < /sql/ry_20250522.sql; fi;
+          if [ -f /sql/quartz.sql ]; then mysql -hmysql -uroot -p"$$MYSQL_ROOT_PASSWORD" "$$MYSQL_DATABASE" < /sql/quartz.sql; fi;
+        else
+          echo "[db-init] sys_config exists, skip import.";
+        fi
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
   # ==================== Backend（RuoYi 后端） ====================
   backend:
     image: maven:3.8.6-openjdk-8
@@ -91,6 +125,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:
