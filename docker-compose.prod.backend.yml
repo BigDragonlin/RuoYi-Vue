@@ -1,0 +1,102 @@
+############################################################
+# RuoYi 生产环境（仅后端：MySQL + Redis + 后端 Jar，不含前端）
+#
+# 使用方法：
+#   1) 启动（首次会自动在容器内构建后端 Jar）：
+#      docker compose -f docker-compose.prod.backend.yml up -d --build
+#   2) 查看状态：
+#      docker compose -f docker-compose.prod.backend.yml ps
+#   3) 查看日志：
+#      docker compose -f docker-compose.prod.backend.yml logs -f backend
+#   4) 停止：
+#      docker compose -f docker-compose.prod.backend.yml down
+#
+# 注意：
+# - 仅暴露 8080 端口（后端）。MySQL/Redis 仅在容器网络可达。
+# - MySQL/Redis/上传文件使用命名卷持久化。
+# - 可用环境变量覆盖默认值（示例 ${VAR:-default}）。
+# - 采用 Compose v2 语法；可使用 .env 文件或外部环境变量注入敏感信息。
+# - 时区统一设置为 Asia/Shanghai。
+############################################################
+
+services:
+  # ==================== MySQL（数据库） ====================
+  mysql:
+    image: mysql:8.0
+    container_name: ruoyi-mysql
+    command:
+      - "--default-authentication-plugin=mysql_native_password"
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_unicode_ci"
+      - "--max_connections=500"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ry-vue}
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-p${MYSQL_ROOT_PASSWORD:-password}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ==================== Redis（缓存） ====================
+  redis:
+    image: redis:6-alpine
+    container_name: ruoyi-redis
+    command:
+      - "redis-server"
+      - "--appendonly"
+      - "yes"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ==================== Backend（RuoYi 后端） ====================
+  backend:
+    image: maven:3.8.6-openjdk-8
+    container_name: ruoyi-backend
+    working_dir: /workspace
+    environment:
+      TZ: Asia/Shanghai
+      MAVEN_OPTS: -Xms512m -Xmx1024m
+      SPRING_PROFILES_ACTIVE: druid
+      SPRING_DATASOURCE_DRUID_MASTER_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-ry-vue}?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8
+      SPRING_DATASOURCE_DRUID_MASTER_USERNAME: root
+      SPRING_DATASOURCE_DRUID_MASTER_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: "6379"
+      RUOYI_PROFILE: /ruoyi/uploadPath
+      SWAGGER_ENABLED: "false"
+      SPRING_DEVTOOLS_RESTART_ENABLED: "false"
+    command:
+      - bash
+      - -lc
+      - export PATH="$$JAVA_HOME/bin:$$PATH"; if [ ! -f ruoyi-admin/target/ruoyi-admin.jar ]; then mvn -DskipTests=true -pl ruoyi-admin -am package; fi; exec "$${JAVA_HOME}/bin/java" -Djava.security.egd=file:/dev/./urandom -Xms512m -Xmx1024m -jar ruoyi-admin/target/ruoyi-admin.jar
+    volumes:
+      - ./:/workspace
+      - maven_repo:/root/.m2
+      - upload_files:/ruoyi/uploadPath
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  redis_data:
+  maven_repo:
+  upload_files:
+
+
