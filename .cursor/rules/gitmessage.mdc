@@ -1,0 +1,70 @@
+---
+description: Git 提交信息规范（Conventional Commits 中文约定）
+---
+
+- **目标**：统一提交信息格式，提升变更可读性、自动生成变更日志与检索效率。
+
+- **基础结构**：
+  - `type(scope)!: subject`
+  - **type**：必须，变更类型；**scope**：可选，影响范围；`!`：可选，表示破坏性变更；**subject**：必须，一句话概述（不以句号结尾）。
+
+- **允许的 type**：
+  - `feat`：新功能
+  - `fix`：缺陷修复
+  - `docs`：文档变更（仅文档）
+  - `style`：样式与代码风格（不影响逻辑，如空格、格式化、CSS 样式）
+  - `refactor`：重构（既非新功能也非修复）
+  - `perf`：性能优化
+  - `test`：测试相关
+  - `build`：构建系统或依赖变更（maven、npm、docker 等）
+  - `ci`：持续集成配置变更
+  - `chore`：杂项（不影响源代码与测试，如脚本、工具）
+  - `revert`：回滚某次提交
+
+- **scope（建议）**：
+  - 后端模块：`ruoyi-admin`、`ruoyi-system`、`ruoyi-framework`、`ruoyi-common`、`ruoyi-quartz`、`ruoyi-generator`
+  - 前端模块：`ruoyi-ui`（可细化为 `ui/login`、`ui/user` 等）
+  - 其它：`build`、`docs`、`sql`、`release` 等
+
+- **subject 规范**：
+  - 使用中文或英文的祈使语气，简洁明确（建议 ≤ 50 字符/字符数）
+  - 不以句号/冒号/分号结尾
+
+- **Body（可选）**：
+  - 说明动机与改动点，必要时给出前后对比与风险；每行 ≤ 72 字符
+  - 破坏性变更需在 Body 或 Footer 中以 `BREAKING CHANGE:` 开头单独说明
+
+- **Footer（可选）**：
+  - 关联事项：`Closes #123`、`Related: #456`
+  - 共同作者：`Co-authored-by: name <email>`
+
+- **示例**：
+  - `feat(ruoyi-admin): 新增系统参数分页查询接口`
+  - `fix(ui/user): 修复用户列表分页后查询条件丢失`
+  - `refactor(ruoyi-system): 重命名 Service 方法以提升可读性`
+  - `perf(ruoyi-ui): 优化表格渲染减少不必要重绘`
+  - `build: 升级 axios 至 1.6.8 并修正兼容处理`
+  - `revert: revert "feat(admin): 支持多条件高级搜索"`
+
+- **提交模板（可复制用作 .gitmessage）**：
+
+```
+type(scope)!: subject
+
+[变更动机]
+- 为什么需要这次改动？
+
+[主要改动]
+- 列出关键点（功能/修复/重构）
+
+[影响范围]
+- 模块/接口/前端页面/数据库（是否向后兼容）
+
+BREAKING CHANGE: 如有破坏性变更，请在此明确说明迁移步骤
+
+Closes: #
+Related: #
+```
+
+- **建议**：如需本地强校验，可引入 `commitlint` 与 Conventional Commits 规则，但本仓库默认仅提供规范说明与模板，不强制校验。
+

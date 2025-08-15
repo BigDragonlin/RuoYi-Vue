@@ -1,0 +1,164 @@
+############################################################
+# RuoYi 生产环境（MySQL + Redis + 后端 Jar + Nginx）
+#
+# 使用方法：
+#   1) 启动（首次会自动在容器内构建前端镜像）：
+#      docker compose -f docker-compose.prod.yml up -d --build
+#   2) 查看状态：
+#      docker compose -f docker-compose.prod.yml ps
+#   3) 查看日志：
+#      docker compose -f docker-compose.prod.yml logs -f web
+#      docker compose -f docker-compose.prod.yml logs -f backend
+#   4) 停止：
+#      docker compose -f docker-compose.prod.yml down
+#
+# 注意：
+# - 仅暴露 80 端口（Nginx）。MySQL/Redis/后端仅在容器网络可达。
+# - MySQL/Redis/上传文件使用命名卷持久化。
+# - 可用环境变量覆盖默认值（示例 ${VAR:-default}）。
+# - 采用 Compose v2 语法；可使用 .env 文件或外部环境变量注入敏感信息。
+# - 时区统一设置为 Asia/Shanghai。
+############################################################
+
+services:
+  # ==================== MySQL（数据库） ====================
+  mysql:
+    # 使用官方 MySQL 8.0 镜像（生产建议固定小版本号以确保一致性）
+    image: mysql:8.0
+    container_name: ruoyi-mysql
+    command:
+      # 使用旧版密码插件以兼容驱动
+      - "--default-authentication-plugin=mysql_native_password"
+      # 设置默认字符集与排序规则（与 RuoYi 推荐一致）
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_unicode_ci"
+      # 适当调高最大连接数以应对瞬时并发
+      - "--max_connections=500"
+    environment:
+      # 数据库 root 密码（务必在生产覆盖）
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
+      # 首次启动自动创建的数据库名
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ry-vue}
+      # 容器时区
+      TZ: Asia/Shanghai
+    volumes:
+      # 数据目录持久化，防止容器删除导致数据丢失
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      # 使用 mysqladmin ping 检查服务可用性
+      test: ["CMD", "mysqladmin", "ping", "-p${MYSQL_ROOT_PASSWORD:-password}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ==================== Redis（缓存） ====================
+  redis:
+    # 轻量 Alpine 版 Redis 6（AOF 开启以提升数据安全）
+    image: redis:6-alpine
+    container_name: ruoyi-redis
+    command:
+      - "redis-server"
+      # 开启追加文件（AOF）持久化
+      - "--appendonly"
+      - "yes"
+    volumes:
+      # Redis 数据持久化
+      - redis_data:/data
+    healthcheck:
+      # 使用 redis-cli ping 检查服务可用性
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ==================== Backend（RuoYi 后端） ====================
+  backend:
+    # 简化交付：在容器内构建并运行（首次启动会耗时拉取依赖）
+    # 若 CI/CD 已产出可运行 jar，则建议改为基于 JRE 镜像的两阶段镜像，或直接挂载 jar。
+    image: maven:3.8.6-openjdk-8
+    container_name: ruoyi-backend
+    # 代码在容器内的工作目录（挂载于 /workspace）
+    working_dir: /workspace
+    environment:
+      # 时区
+      TZ: Asia/Shanghai
+      # 控制 Maven/Java 内存占用
+      MAVEN_OPTS: -Xms512m -Xmx1024m
+      # 激活 druid 数据源配置
+      SPRING_PROFILES_ACTIVE: druid
+      # 数据源指向 compose 内 mysql 服务
+      SPRING_DATASOURCE_DRUID_MASTER_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-ry-vue}?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8
+      SPRING_DATASOURCE_DRUID_MASTER_USERNAME: root
+      SPRING_DATASOURCE_DRUID_MASTER_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
+      # Redis 指向 compose 内 redis 服务
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: "6379"
+      # 业务上传目录（与下方卷挂载一致）
+      RUOYI_PROFILE: /ruoyi/uploadPath
+      # 生产禁用 swagger & devtools
+      SWAGGER_ENABLED: "false"          # 映射到 swagger.enabled
+      SPRING_DEVTOOLS_RESTART_ENABLED: "false"
+    # 构建并运行后端：先 mvn package 再以 jar 方式启动
+    command:
+      - bash
+      - -lc
+      - export PATH="$$JAVA_HOME/bin:$$PATH"; if [ ! -f ruoyi-admin/target/ruoyi-admin.jar ]; then mvn -DskipTests=true -pl ruoyi-admin -am package; fi; exec "$${JAVA_HOME}/bin/java" -Djava.security.egd=file:/dev/./urandom -Xms512m -Xmx1024m -jar ruoyi-admin/target/ruoyi-admin.jar
+    volumes:
+      # 挂载整个项目目录，以便读取构建产物（生产可改为仅挂载目标模块或 jar）
+      - ./:/workspace
+      # Maven 本地仓库缓存卷，加速依赖下载
+      - maven_repo:/root/.m2
+      # 业务上传文件持久化
+      - upload_files:/ruoyi/uploadPath
+    depends_on:
+      mysql:
+        # 等待 MySQL 健康再启动
+        condition: service_healthy
+      redis:
+        # 等待 Redis 健康再启动
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ==================== Web（Nginx 静态托管 + 反向代理） ====================
+  web:
+    # 使用多阶段构建：Node16 构建前端 + Nginx 托管
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+      args:
+        # 可在构建时覆盖 API 前缀
+        VUE_APP_BASE_API: /prod-api
+        # NPM_REGISTRY: https://registry.npmmirror.com
+    image: ruoyi-web:prod
+    container_name: ruoyi-web
+    environment:
+      # 时区
+      TZ: Asia/Shanghai
+    ports:
+      # 仅暴露 80 端口对外访问
+      - "80:80"
+    depends_on:
+      backend:
+        # 后端容器启动后再启动 Nginx（无需等健康）
+        condition: service_started
+    healthcheck:
+      # Nginx 主页可被拉取视为健康
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  # MySQL 数据卷
+  mysql_data:
+  # Redis 数据卷
+  redis_data:
+  # Maven 依赖缓存卷
+  maven_repo:
+  # 业务上传文件卷
+  upload_files:
+
+

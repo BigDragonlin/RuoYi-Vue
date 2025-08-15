@@ -1,0 +1,55 @@
+# Cursor: 忽略不必要的大文件与生成物，降低上下文噪音
+
+# VCS / IDE
+.git/
+.gitignore
+.idea/
+.vscode/
+
+# Java 构建输出
+**/target/
+
+# 前端依赖与构建产物
+ruoyi-ui/node_modules/
+ruoyi-ui/dist/
+ruoyi-ui/build/
+ruoyi-ui/.cache/
+ruoyi-ui/.temp/
+
+# 大体积静态资源（按需放开）
+ruoyi-ui/public/styles/theme-chalk/
+ruoyi-ui/src/assets/
+
+# 二进制及媒体文件
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.gif
+**/*.svg
+**/*.ico
+**/*.bmp
+**/*.webp
+**/*.mp4
+**/*.mp3
+**/*.wav
+**/*.zip
+**/*.7z
+**/*.rar
+**/*.pdf
+**/*.doc
+**/*.docx
+**/*.ppt
+**/*.pptx
+**/*.xlsx
+**/*.xls
+
+# 日志与 source map
+**/*.log
+**/*.map
+
+# 覆盖率与临时目录
+**/coverage/
+**/.nyc_output/
+**/swagger-ui/
+
+

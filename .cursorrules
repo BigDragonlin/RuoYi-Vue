@@ -1,0 +1,29 @@
+### 通用
+- **输出语言**：始终使用中文。
+- **工具偏好**：在可用时优先使用 MCP 工具（并行检索、读文件、搜索）；修改前先做简要发现与定位；修改后执行必要的构建/检查。
+- **改动粒度**：倾向于小步可验证的编辑，避免一次性大范围重构。
+
+### 项目概览
+- **技术栈**：后端为 RuoYi（Spring Boot + MyBatis），前端为 Vue 2 + Element-UI。
+- **模块划分**：
+  - 控制器：`ruoyi-admin`（对外接口、权限、审计日志）
+  - 领域/服务/持久化：`ruoyi-system`（domain、service、mapper、xml）
+  - 公共组件：`ruoyi-common`、`ruoyi-framework`、`ruoyi-generator`、`ruoyi-quartz`
+  - 前端：`ruoyi-ui`
+
+### 后端规范（RuoYi）
+- 新增业务：实体放在 `ruoyi-system/.../domain`，Mapper 放在 `.../mapper`，XML 放在 `ruoyi-system/src/main/resources/mapper`，Service 放在 `.../service` 与 `.../service/impl`，Controller 放在 `ruoyi-admin/.../controller`。
+- Controller 统一 `@RestController`，路由前缀如 `/system/xxx`；权限用 `@PreAuthorize("@ss.hasPermi('system:xxx:list')")`；审计日志用 `@Log(title = "Xxx", businessType = BusinessType.INSERT/UPDATE/DELETE/EXPORT/OTHER)`。
+- 分页查询：调用 `startPage()` 并返回 `TableDataInfo`；普通返回用 `AjaxResult`。
+- Excel 导出：使用 `ExcelUtil<T>`。
+
+### 前端规范（Vue 2 / Element-UI）
+- API 统一置于 `ruoyi-ui/src/api/**`，通过 `ruoyi-ui/src/utils/request.js` 发起请求。
+- CRUD 页遵循 RuoYi 模板：查询表单 + 表格 + `RightToolbar` + `Pagination`；权限指令 `v-hasPermi`/`v-hasRole`；字典使用 `DictTag`/`useDict`。
+- 路由与菜单按后端权限点与 `meta` 保持一致；避免在组件中硬编码接口路径。
+
+### 工作流
+- 修改前先检索并理解现有代码（控制器、服务、Mapper、前端 API 与视图）。
+- 多文件编辑时先产出简要计划；完成后运行前端/后端构建以验证变更。
+
+

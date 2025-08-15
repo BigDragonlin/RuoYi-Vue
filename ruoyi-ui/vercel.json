@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/prod-api/(.*)", "destination": "http://47.117.247.68:8080/$1" },
+    { "source": "/v3/api-docs/(.*)", "destination": "http://47.117.247.68:8080/v3/api-docs/$1" }
+  ]
+}

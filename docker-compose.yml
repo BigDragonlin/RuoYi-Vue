@@ -1,0 +1,136 @@
+############################################################
+# RuoYi 一键开发环境（MySQL + Redis + 后端 + 前端）
+#
+# 使用方法：
+#   1) 启动：  docker compose up -d
+#   2) 查看：  docker compose ps
+#   3) 日志：  docker compose logs -f backend
+#   4) 停止：  docker compose down
+#   5) 清理卷：docker compose down -v  （会删除数据，谨慎）
+#
+# 约定与说明：
+# - 采用 Compose v2 语法（无需声明 version 字段）。
+# - 所有容器默认 Asia/Shanghai 时区。
+# - 首次启动会用 sql/ry_20250522.sql 初始化数据库（只在数据卷为空时）。
+# - 前后端均以开发模式运行，便于热更新。
+############################################################
+
+services: # 定义所有要运行的服务
+  mysql: # MySQL 8.0 数据库
+    image: mysql:8.0 # 使用官方 MySQL 8.0 镜像
+    container_name: ruoyi-mysql
+    # mysqld 启动参数（逐项可注释说明）
+    command:
+      - "--default-authentication-plugin=mysql_native_password" # 使用旧密码插件，兼容旧客户端/驱动
+      - "--character-set-server=utf8mb4" # 默认字符集
+      - "--collation-server=utf8mb4_unicode_ci" # 字符排序规则
+      - "--max_connections=1000" # 最大连接数
+    environment:
+      MYSQL_ROOT_PASSWORD: password # root 密码（生产务必修改）
+      MYSQL_DATABASE: ry-vue        # 初始化库名，RuoYi 默认库
+      TZ: Asia/Shanghai             # 容器时区
+    volumes:
+      - mysql_data:/var/lib/mysql # 数据目录持久化，避免容器重建丢数据
+      - ./sql/ry_20250522.sql:/docker-entrypoint-initdb.d/01_ry.sql:ro # 首次启动初始化 SQL（只在数据卷为空时执行）
+    healthcheck: # 健康检查，确保对外依赖可用
+      test: ["CMD", "mysqladmin", "ping", "-ppassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped # 异常退出自动重启
+
+  redis: # Redis 缓存
+    image: redis:6-alpine # 轻量 Alpine 版 Redis 6
+    container_name: ruoyi-redis
+    command:
+      - "redis-server"
+      - "--appendonly" # 开启 AOF 持久化
+      - "yes"
+    ports:
+      - "6379:6379" # 宿主机端口:容器端口
+    volumes:
+      - redis_data:/data # Redis 数据持久化
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend: # RuoYi 后端（Java 8 + Spring Boot）
+    image: maven:3.8.6-openjdk-8 # 带 JDK8 的 Maven 镜像，便于开发构建
+    container_name: ruoyi-backend
+    working_dir: /workspace # 代码在容器内的工作目录
+    # 启动流程：
+    # 1) 聚合安装依赖模块到容器内本地仓库（-am install）
+    # 2) 进入 ruoyi-admin 以 spring-boot:run 方式启动（启用 devtools 热重启）
+    command: >
+      bash -lc "mvn -DskipTests=true -pl ruoyi-admin -am install && \
+      mvn -N -f ruoyi-admin/pom.xml \
+      org.springframework.boot:spring-boot-maven-plugin:2.5.15:run \
+      -Dspring-boot.run.mainClass=com.ruoyi.RuoYiApplication \
+      -Dspring-boot.run.fork=true \
+      -Dspring-boot.run.profiles=druid \
+      -Dspring-boot.run.jvmArguments='-Dspring.devtools.restart.enabled=true -Dspring.devtools.restart.poll-interval=2s -Dspring.devtools.restart.quiet-period=1s -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005'"
+    environment:
+      TZ: Asia/Shanghai
+      MAVEN_OPTS: -Xms512m -Xmx1024m # 控制 Maven/Java 内存，避免 OOM
+      SPRING_PROFILES_ACTIVE: druid   # 使用 druid 配置文件
+      # 数据源指向 mysql 服务（Compose 内部 DNS 可直连服务名）
+      SPRING_DATASOURCE_DRUID_MASTER_URL: jdbc:mysql://mysql:3306/ry-vue?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=GMT%2B8
+      SPRING_DATASOURCE_DRUID_MASTER_USERNAME: root
+      SPRING_DATASOURCE_DRUID_MASTER_PASSWORD: password
+      # Redis 指向 redis 服务
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: "6379"
+      # 文件上传目录（容器内路径，与 volumes 对应）
+      RUOYI_PROFILE: /ruoyi/uploadPath
+    volumes:
+      - ./:/workspace              # 挂载整个项目目录，支持热更新/本地开发
+      - maven_repo:/root/.m2       # 复用 Maven 本地仓库，加速依赖下载
+      - upload_files:/ruoyi/uploadPath # 业务上传文件持久化
+    ports:
+      - "8080:8080" # 宿主 8080 -> 容器 8080
+      - "5005:5005" # 远程调试端口（JDWP）
+    depends_on:
+      mysql:
+        condition: service_healthy # 等待 MySQL 健康
+      redis:
+        condition: service_healthy # 等待 Redis 健康
+    restart: unless-stopped
+
+  frontend: # RuoYi 前端（Vue 2 + Element-UI）
+    image: node:16-alpine # Node 16 运行环境
+    container_name: ruoyi-frontend
+    working_dir: /app
+    environment:
+      TZ: Asia/Shanghai
+      # 前端开发服务器监听端口（注意 ruoyi-ui/vue.config.js 读取的是小写 port）
+      port: "80"
+      PORT: "80"
+      HOST: 0.0.0.0 # 绑定所有网卡，容器外可访问
+      # 提供给前端的反向代理后端地址（vue.config.js 会读取）
+      BACKEND_URL: http://backend:8080
+      VUE_APP_BASE_API: /dev-api # 前端请求的统一前缀
+      # Windows/Mac 下文件监听建议开启轮询，提升热更新可靠性
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+      # 国内加速（可选）
+      NPM_CONFIG_REGISTRY: https://registry.npmmirror.com
+    command: sh -c "npm install && npm run dev" # 安装依赖并启动开发服务器
+    volumes:
+      - ./ruoyi-ui:/app                 # 挂载前端源码目录
+      - ui_node_modules:/app/node_modules # 缓存 node_modules，避免每次重装
+    ports:
+      - "80:80" # 宿主 8000 -> 容器 80（前端访问端口）
+    depends_on:
+      backend:
+        condition: service_started # 后端容器已启动即可
+    restart: unless-stopped
+
+volumes: # 定义命名卷（跨容器/重建持久化）
+  mysql_data:   # MySQL 数据文件卷
+  redis_data:   # Redis 数据文件卷
+  maven_repo:   # Maven 本地仓库缓存卷
+  ui_node_modules: # 前端依赖缓存卷
+  upload_files: # 后端上传文件卷

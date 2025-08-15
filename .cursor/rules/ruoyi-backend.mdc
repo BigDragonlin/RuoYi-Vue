@@ -1,0 +1,33 @@
+---
+description: RuoYi 后端（Java/Spring Boot/MyBatis）开发约定
+---
+
+- **分层与路径**：
+  - 实体模型：`ruoyi-system/src/main/java/.../domain`
+  - Mapper 接口：`ruoyi-system/src/main/java/.../mapper`
+  - Mapper XML：`ruoyi-system/src/main/resources/mapper`
+  - Service 接口与实现：`ruoyi-system/src/main/java/.../service` 与 `.../service/impl`
+  - Controller：`ruoyi-admin/src/main/java/.../controller`
+
+- **控制器规范**：
+  - 使用 `@RestController` + `@RequestMapping("/system/xxx")`；
+  - 权限：`@PreAuthorize("@ss.hasPermi('system:xxx:list')")`；
+  - 审计：`@Log(title = "Xxx", businessType = BusinessType.INSERT/UPDATE/DELETE/EXPORT/OTHER)`；
+  - 返回：列表返回 `TableDataInfo`；增删改查返回 `AjaxResult`。
+
+- **分页与查询**：
+  - 控制器列表接口调用 `startPage()`；
+  - Service/Mapper 遵循 MyBatis 命名，条件查询优先使用参数对象。
+
+- **数据导出**：
+  - 使用 `ExcelUtil<T>` 构造导出；
+  - 导出权限点通常为 `system:xxx:export`。
+
+- **参数校验与异常**：
+  - Bean 校验使用 `javax.validation` 注解与 `@Validated`；
+  - 统一异常由 `GlobalExceptionHandler` 处理。
+
+- **代码风格**：
+  - 命名语义化，避免缩写；
+  - 接口幂等性与安全（权限、数据范围）按 RuoYi 既有实现对齐。
+
